@@ -2,9 +2,9 @@ import Foundation
 
 /// A one-shot request to change the application's UI structure.
 ///
-/// An intent describes what the caller wants to reach. `AppUIModel` resolves that
-/// request into durable UI state such as a selected tab, a navigation path, or an
-/// app-wide presentation.
+/// An intent describes what the caller wants to reach. `SessionUIContext` resolves that
+/// request into durable UI state such as a selected tab, a navigation path, or a
+/// Session-wide presentation.
 enum UIIntent: Equatable, Sendable {
   case showHome
   case openStory(id: String)
@@ -59,4 +59,3 @@ enum UIIntent: Equatable, Sendable {
     }
   }
 }
-

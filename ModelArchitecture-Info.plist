@@ -25,6 +25,7 @@
 			<string>app.muukii.ModelArchitecture.routes</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>uicontext-demo</string>
 				<string>uimodel-demo</string>
 			</array>
 		</dict>

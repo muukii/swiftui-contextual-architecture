@@ -4,6 +4,8 @@ name: Route from the developer lab
 - launchApp:
     clearState: true
 - tapOn: "Sign In"
+- tapOn:
+    id: "complete-sign-in-button"
 - tapOn: "Continue"
 - tapOn: "Finish Setup"
 - tapOn: "Enter App"

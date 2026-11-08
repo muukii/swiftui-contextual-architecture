@@ -1,66 +1,86 @@
 import Foundation
 
-/// The root UIModel for the application's complete externally controllable UI.
-///
-/// The tree records durable UI scopes and their relationships. Callers send
-/// one-shot `UIIntent` values; this root resolves each intent against the current
-/// session and mutates the lowest-level UI representation needed by SwiftUI.
+/// Session-owned UI topology, not the Session container or service lifetime.
+/// Authentication publishes child UI scopes here; intents never authenticate.
+/// Pending routing belongs to this context and is invalidated on disposal.
+@MainActor
 @Observable
-final class AppUIModel {
-  /// Mutually exclusive application session scopes.
-  enum Session {
-    case signedOut(SignInUIModel)
-    case signedIn(SignedInUIModel)
+final class SessionUIContext {
+  let sessionID: UUID
+  /// Authentication and termination surfaces inside one existing Session.
+  enum Authentication {
+    case signedOut(SignInUIContext)
+    case authenticating(attemptID: UUID, account: DemoAccount)
+    case signedIn(SignedInUIContext)
+    case closing
+    case closed
   }
 
-  var session: Session
-  var sheet: AppSheetUIModel?
-  var blockingNotice: BlockingNoticeUIModel?
+  private(set) var authentication: Authentication = .signedOut(SignInUIContext())
+  var sheet: SessionSheetUIContext?
+  var blockingNotice: BlockingNoticeUIContext?
 
   private(set) var pendingIntent: UIIntent?
   private(set) var routingMessage = "No route has been handled yet."
 
   private let deepLinkParser = DeepLinkParser()
 
-  init(session: Session = .signedOut(SignInUIModel())) {
-    self.session = session
+  init(sessionID: UUID) { self.sessionID = sessionID }
+
+  var acceptsInput: Bool {
+    switch authentication {
+    case .closing, .closed: false
+    default: true
+    }
   }
 
-  // MARK: - Session flow
+  // MARK: - Session-owned transitions
 
-  /// Replaces the signed-out scope with the signed-in setup scope.
-  func signIn() {
-    guard case .signedOut(let signInUIModel) = session else { return }
-    signInUIModel.recordSignIn()
-    session = .signedIn(SignedInUIModel())
-    routingMessage = "Created signed-in setup scope."
+  func beginAuthentication(attemptID: UUID, account: DemoAccount) {
+    guard case .signedOut = authentication else { return }
+    authentication = .authenticating(attemptID: attemptID, account: account)
+  }
+
+  func finishAuthentication(account: DemoAccount) {
+    guard case .authenticating = authentication else { return }
+    authentication = .signedIn(SignedInUIContext(account: account))
+    routingMessage = "Created authenticated child; enclosing Session unchanged."
+  }
+
+  func failAuthentication() {
+    guard case .authenticating = authentication else { return }
+    authentication = .signedOut(SignInUIContext(errorMessage: "Mock authentication failed. The same Session can retry."))
   }
 
   /// Replaces setup with a preparing main scope.
   func completeSetup() {
-    guard case .signedIn(let signedInUIModel) = session,
-          case .setup = signedInUIModel.phase
+    guard case .signedIn(let signedInUIContext) = authentication,
+          case .setup = signedInUIContext.phase
     else { return }
 
-    signedInUIModel.phase = .main(MainUIModel())
+    signedInUIContext.phase = .main(MainUIContext())
     routingMessage = "Created the main scope; its tabs are retained while preparation is visible."
   }
 
   /// Makes the retained tab tree visible and replays the latest deferred intent.
   func finishPreparation() {
-    guard let mainUIModel else { return }
-    mainUIModel.surface = .tabs
+    guard let mainUIContext else { return }
+    mainUIContext.surface = .tabs
     routingMessage = "The tab tree is ready."
     replayPendingIntentIfNeeded()
   }
 
-  /// Destroys the signed-in tree and returns to a fresh signed-out scope.
-  func signOut() {
-    session = .signedOut(SignInUIModel())
+  /// Invalidates routes and presentation before service shutdown suspends.
+  func beginClosing() {
+    authentication = .closing
     sheet = nil
     blockingNotice = nil
     pendingIntent = nil
-    routingMessage = "Destroyed the signed-in UIModel tree."
+    routingMessage = "Closing this Session; pending intent discarded."
+  }
+
+  func finishClosing() {
+    authentication = .closed
   }
 
   // MARK: - External routing
@@ -68,6 +88,11 @@ final class AppUIModel {
   /// Parses and handles an application deep link.
   @discardableResult
   func handle(url: URL) -> Bool {
+    guard acceptsInput else { return false }
+    let targets = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { $0.name == "session" } ?? []
+    guard targets.isEmpty || (targets.count == 1 && targets[0].value.flatMap(UUID.init(uuidString:)) == sessionID) else {
+      return false
+    }
     guard let intent = deepLinkParser.intent(for: url) else {
       routingMessage = "Ignored unsupported URL: \(url.absoluteString)"
       return false
@@ -80,21 +105,21 @@ final class AppUIModel {
   /// Parses URL text entered in Route Lab and handles the resulting intent.
   @discardableResult
   func handle(urlText: String) -> Bool {
-    guard let intent = deepLinkParser.intent(for: urlText) else {
+    guard acceptsInput else { return false }
+    guard let url = URL(string: urlText.trimmingCharacters(in: .whitespacesAndNewlines)), handle(url: url) else {
       routingMessage = "The URL does not match a supported route."
       return false
     }
-
-    sheet = nil
-    send(intent)
+    if case .routeLab = sheet { sheet = nil }
     return true
   }
 
-  /// Resolves a high-level request against the current UIModel tree.
+  /// Resolves a high-level request against the current UIContext tree.
   func send(_ intent: UIIntent) {
+    guard acceptsInput else { return }
     if case .enterRestrictedMode = intent,
-       let mainUIModel,
-       case .restricted = mainUIModel.surface {
+       let mainUIContext,
+       case .restricted = mainUIContext.surface {
       if pendingIntent == intent {
         pendingIntent = nil
       }
@@ -151,28 +176,28 @@ final class AppUIModel {
         routingMessage = "Kept the blocking layer visible instead of presenting a sheet above it."
         return
       }
-      sheet = .announcement(AnnouncementUIModel())
-      routingMessage = "Presented an app-wide sheet outside the tab paths."
+      sheet = .announcement(AnnouncementUIContext())
+      routingMessage = "Presented a Session-wide sheet outside the tab paths."
 
     case .enterRestrictedMode:
-      guard let mainUIModel else { return }
-      mainUIModel.surface = .restricted(RestrictionUIModel())
+      guard let mainUIContext else { return }
+      mainUIContext.surface = .restricted(RestrictionUIContext())
       routingMessage = "Replaced the visible tabs with a restricted surface; tab scopes remain alive."
 
     case .restoreAccess:
-      guard let mainUIModel,
-            case .restricted = mainUIModel.surface
+      guard let mainUIContext,
+            case .restricted = mainUIContext.surface
       else {
         routingMessage = "Restore Access had no restricted surface to replace."
         return
       }
-      mainUIModel.surface = .tabs
+      mainUIContext.surface = .tabs
       routingMessage = "Restored the retained tab tree."
       replayPendingIntentIfNeeded()
 
     case .showBlockingNotice:
       sheet = nil
-      blockingNotice = BlockingNoticeUIModel()
+      blockingNotice = BlockingNoticeUIContext()
       routingMessage = "Presented a blocking layer in its own UI lane."
     }
 
@@ -181,15 +206,15 @@ final class AppUIModel {
     }
   }
 
-  // MARK: - App-wide presentations
+  // MARK: - Session-wide presentations
 
-  /// Presents the developer Route Lab as an app-level sheet scope.
+  /// Presents Route Lab inside this Session, above its tabs.
   func presentRouteLab() {
-    guard blockingNotice == nil else { return }
-    sheet = .routeLab(RouteLabUIModel())
+    guard acceptsInput, blockingNotice == nil else { return }
+    sheet = .routeLab(RouteLabUIContext())
   }
 
-  /// Removes the current app-level sheet scope.
+  /// Removes the current Session-level sheet scope.
   func dismissSheet() {
     sheet = nil
   }
@@ -201,23 +226,32 @@ final class AppUIModel {
 
   // MARK: - Diagnostics
 
-  /// A live textual projection of the durable UIModel tree.
+  /// A live textual projection of the durable UIContext tree.
   var treeDescription: String {
-    var lines = ["AppUIModel"]
+    var lines = ["SessionUIContext"]
 
-    switch session {
+    switch authentication {
     case .signedOut:
-      lines.append("├─ session: signedOut(SignInUIModel)")
+      lines.append("├─ authentication: signedOut(SignInUIContext)")
 
-    case .signedIn(let signedInUIModel):
-      lines.append("├─ session: signedIn(SignedInUIModel)")
-      switch signedInUIModel.phase {
-      case .setup(let setupUIModel):
-        lines.append("│  └─ phase: setup(\(setupUIModel.step.rawValue))")
+    case .authenticating(_, let account):
+      lines.append("├─ authentication: pending (\(account.rawValue))")
 
-      case .main(let mainUIModel):
-        lines.append("│  └─ phase: main(MainUIModel)")
-        switch mainUIModel.surface {
+    case .closing:
+      lines.append("├─ lifecycle: closing")
+
+    case .closed:
+      lines.append("├─ lifecycle: closed")
+
+    case .signedIn(let signedInUIContext):
+      lines.append("├─ authentication: signedIn(SignedInUIContext)")
+      switch signedInUIContext.phase {
+      case .setup(let setupUIContext):
+        lines.append("│  └─ phase: setup(\(setupUIContext.step.rawValue))")
+
+      case .main(let mainUIContext):
+        lines.append("│  └─ phase: main(MainUIContext)")
+        switch mainUIContext.surface {
         case .preparing:
           lines.append("│     ├─ surface: preparing")
         case .tabs:
@@ -225,34 +259,34 @@ final class AppUIModel {
         case .restricted:
           lines.append("│     ├─ surface: restricted")
         }
-        lines.append("│     └─ retained tabs: \(tabSummary(mainUIModel.tabs))")
+        lines.append("│     └─ retained tabs: \(tabSummary(mainUIContext.tabs))")
       }
     }
 
     lines.append("├─ sheet: \(sheetName)")
-    lines.append("├─ blocking: \(blockingNotice == nil ? "nil" : "BlockingNoticeUIModel")")
+    lines.append("├─ blocking: \(blockingNotice == nil ? "nil" : "BlockingNoticeUIContext")")
     lines.append("└─ pendingIntent: \(pendingIntent?.title ?? "nil")")
     return lines.joined(separator: "\n")
   }
 
-  private var mainUIModel: MainUIModel? {
-    guard case .signedIn(let signedInUIModel) = session,
-          case .main(let mainUIModel) = signedInUIModel.phase
+  private var mainUIContext: MainUIContext? {
+    guard case .signedIn(let signedInUIContext) = authentication,
+          case .main(let mainUIContext) = signedInUIContext.phase
     else { return nil }
-    return mainUIModel
+    return mainUIContext
   }
 
-  private var readyTabs: TabContainerUIModel? {
-    guard let mainUIModel,
-          case .tabs = mainUIModel.surface
+  private var readyTabs: TabContainerUIContext? {
+    guard let mainUIContext,
+          case .tabs = mainUIContext.surface
     else { return nil }
-    return mainUIModel.tabs
+    return mainUIContext.tabs
   }
 
   private var sheetName: String {
     switch sheet {
-    case .routeLab: "RouteLabUIModel"
-    case .announcement: "AnnouncementUIModel"
+    case .routeLab: "RouteLabUIContext"
+    case .announcement: "AnnouncementUIContext"
     case nil: "nil"
     }
   }
@@ -263,7 +297,7 @@ final class AppUIModel {
     send(pendingIntent)
   }
 
-  private func tabSummary(_ tabs: TabContainerUIModel) -> String {
+  private func tabSummary(_ tabs: TabContainerUIContext) -> String {
     [
       "selected=\(tabs.selectedTab.rawValue)",
       "home.path=\(tabs.home.path.count)",

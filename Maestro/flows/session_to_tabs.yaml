@@ -6,6 +6,8 @@ name: Complete setup and visit every retained tab
 
 - assertVisible: "Sign In"
 - tapOn: "Sign In"
+- tapOn:
+    id: "complete-sign-in-button"
 - tapOn: "Continue"
 - tapOn: "Finish Setup"
 - tapOn: "Enter App"

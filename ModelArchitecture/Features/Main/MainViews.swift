@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Selects the visible subtree within a signed-in session.
 struct SignedInScreen: View {
-  @Bindable var uiModel: SignedInUIModel
+  @Bindable var uiContext: SignedInUIContext
   let pendingIntentTitle: String?
   let onCompleteSetup: () -> Void
   let onFinishPreparation: () -> Void
@@ -10,17 +10,18 @@ struct SignedInScreen: View {
   let onSignOut: () -> Void
 
   var body: some View {
-    switch uiModel.phase {
-    case .setup(let setupUIModel):
+    switch uiContext.phase {
+    case .setup(let setupUIContext):
       ProfileSetupScreen(
-        uiModel: setupUIModel,
+        uiContext: setupUIContext,
         pendingIntentTitle: pendingIntentTitle,
         onComplete: onCompleteSetup
       )
 
-    case .main(let mainUIModel):
+    case .main(let mainUIContext):
       MainScreen(
-        uiModel: mainUIModel,
+        uiContext: mainUIContext,
+        accountName: uiContext.account.rawValue,
         pendingIntentTitle: pendingIntentTitle,
         onFinishPreparation: onFinishPreparation,
         onSendIntent: onSendIntent,
@@ -32,31 +33,33 @@ struct SignedInScreen: View {
 
 /// Selects the active surface within the main UI scope.
 struct MainScreen: View {
-  @Bindable var uiModel: MainUIModel
+  @Bindable var uiContext: MainUIContext
+  let accountName: String
   let pendingIntentTitle: String?
   let onFinishPreparation: () -> Void
   let onSendIntent: (UIIntent) -> Void
   let onSignOut: () -> Void
 
   var body: some View {
-    switch uiModel.surface {
-    case .preparing(let preparationUIModel):
+    switch uiContext.surface {
+    case .preparing(let preparationUIContext):
       PreparationScreen(
-        uiModel: preparationUIModel,
+        uiContext: preparationUIContext,
         pendingIntentTitle: pendingIntentTitle,
         onFinish: onFinishPreparation
       )
 
     case .tabs:
       TabContainerScreen(
-        uiModel: uiModel.tabs,
+        uiContext: uiContext.tabs,
+        accountName: accountName,
         onSendIntent: onSendIntent,
         onSignOut: onSignOut
       )
 
-    case .restricted(let restrictionUIModel):
+    case .restricted(let restrictionUIContext):
       RestrictionScreen(
-        uiModel: restrictionUIModel,
+        uiContext: restrictionUIContext,
         pendingIntentTitle: pendingIntentTitle,
         onRestore: { onSendIntent(.restoreAccess) },
         onSignOut: onSignOut
@@ -67,7 +70,7 @@ struct MainScreen: View {
 
 /// Renders the explicit preparation surface before tabs become routable.
 private struct PreparationScreen: View {
-  let uiModel: PreparationUIModel
+  let uiContext: PreparationUIContext
   let pendingIntentTitle: String?
   let onFinish: () -> Void
 
@@ -79,7 +82,7 @@ private struct PreparationScreen: View {
       Text("Preparing Your Space")
         .font(.largeTitle.bold())
 
-      Text(uiModel.message)
+      Text(uiContext.message)
         .foregroundStyle(.secondary)
 
       if let pendingIntentTitle {
@@ -103,7 +106,7 @@ private struct PreparationScreen: View {
 
 /// Renders a replacement main surface while keeping the tab tree retained.
 private struct RestrictionScreen: View {
-  let uiModel: RestrictionUIModel
+  let uiContext: RestrictionUIContext
   let pendingIntentTitle: String?
   let onRestore: () -> Void
   let onSignOut: () -> Void
@@ -114,10 +117,10 @@ private struct RestrictionScreen: View {
         .font(.system(size: 58))
         .foregroundStyle(.orange)
 
-      Text(uiModel.title)
+      Text(uiContext.title)
         .font(.largeTitle.bold())
 
-      Text(uiModel.message)
+      Text(uiContext.message)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
 
@@ -138,4 +141,3 @@ private struct RestrictionScreen: View {
     .background(Color(.systemGroupedBackground))
   }
 }
-
