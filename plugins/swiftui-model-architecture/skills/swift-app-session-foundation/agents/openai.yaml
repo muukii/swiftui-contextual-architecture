@@ -1,0 +1,4 @@
+interface:
+  display_name: "Swift App Session Foundation"
+  short_description: "Build login scopes, UI contexts, and storage lifecycles"
+  default_prompt: "Use $swift-app-session-foundation to build login/logout ownership, UIContext/UIIntent routing, and isolated storage cleanup for this Swift app."

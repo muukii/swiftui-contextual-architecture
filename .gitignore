@@ -88,3 +88,6 @@ iOSInjectionProject/
 # End of https://www.toptal.com/developers/gitignore/api/swift
 .DS_Store
 .claude/settings.local.json
+
+# Local implementation notes and packaging artifacts
+.tmp/

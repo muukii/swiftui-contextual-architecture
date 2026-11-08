@@ -188,6 +188,14 @@ This project is intentionally a routing prototype, not a complete application ar
 - App-wide sheets and blocking UI are modeled separately from per-tab stacks.
 - The example favors explicit transitions and inspectable state over framework abstraction.
 
+## Agent Skill
+
+The repository includes the [SwiftUI Model Architecture plugin](plugins/swiftui-model-architecture/README.md), a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package rooted at `plugins/swiftui-model-architecture/`.
+
+Its English-language [`swift-app-session-foundation`](plugins/swiftui-model-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds login/logout foundations around UIContext/UIIntent, session-owned services, isolated storage, and explicit cleanup lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific limitations recorded in its references.
+
+Invoke `$swift-app-session-foundation` when building or refactoring these boundaries in a client that supports this invocation. The repository-local `.agents/skills/swift-app-session-foundation` link points to the packaged skill, keeping one maintained copy. See the plugin README for validation and distribution instructions.
+
 ## Requirements
 
 - Xcode with Swift Observation support
