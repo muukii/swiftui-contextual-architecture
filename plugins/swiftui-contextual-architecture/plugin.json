@@ -1,12 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "swiftui-model-architecture",
+  "name": "swiftui-contextual-architecture",
   "version": "0.1.0",
   "description": "Build Swift login/logout foundations with explicit UI context ownership, isolated persistence, and recoverable session cleanup.",
   "author": {
     "name": "Hiroshi Kimura"
   },
-  "repository": "https://github.com/muukii/swiftui-model-architecture",
+  "repository": "https://github.com/muukii/swiftui-contextual-architecture",
   "keywords": [
     "swift",
     "swiftui",

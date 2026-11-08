@@ -1,4 +1,4 @@
-# UIModel Routing Architecture for SwiftUI
+# SwiftUI Contextual Architecture
 
 This repository is a small SwiftUI prototype for representing app-level routing as an explicit **UIModel tree**.
 
@@ -190,9 +190,9 @@ This project is intentionally a routing prototype, not a complete application ar
 
 ## Agent Skill
 
-The repository includes the [SwiftUI Model Architecture plugin](plugins/swiftui-model-architecture/README.md), a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package rooted at `plugins/swiftui-model-architecture/`.
+The repository includes the [SwiftUI Contextual Architecture plugin](plugins/swiftui-contextual-architecture/README.md), a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package rooted at `plugins/swiftui-contextual-architecture/`.
 
-Its English-language [`swift-app-session-foundation`](plugins/swiftui-model-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds login/logout foundations around UIContext/UIIntent, session-owned services, isolated storage, and explicit cleanup lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific limitations recorded in its references.
+Its English-language [`swift-app-session-foundation`](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds login/logout foundations around UIContext/UIIntent, session-owned services, isolated storage, and explicit cleanup lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific limitations recorded in its references.
 
 Invoke `$swift-app-session-foundation` when building or refactoring these boundaries in a client that supports this invocation. The repository-local `.agents/skills/swift-app-session-foundation` link points to the packaged skill, keeping one maintained copy. See the plugin README for validation and distribution instructions.
 

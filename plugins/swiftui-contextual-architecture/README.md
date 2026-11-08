@@ -1,4 +1,4 @@
-# SwiftUI Model Architecture Plugin
+# SwiftUI Contextual Architecture Plugin
 
 An [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package for building Swift applications with explicit ownership of login sessions, UI contexts, services, and persistent storage.
 
@@ -19,7 +19,7 @@ The skill and its references are written in English. They describe lessons from 
 This directory is the plugin root:
 
 ```text
-swiftui-model-architecture/
+swiftui-contextual-architecture/
 ├── plugin.json
 ├── README.md
 └── skills/
@@ -48,10 +48,10 @@ For example, from the repository root:
 
 ```sh
 mkdir -p .tmp/dist
-COPYFILE_DISABLE=1 tar -czf .tmp/dist/swiftui-model-architecture-0.1.0.tar.gz \
-  -C plugins swiftui-model-architecture
+COPYFILE_DISABLE=1 tar -czf .tmp/dist/swiftui-contextual-architecture-0.1.0.tar.gz \
+  -C plugins swiftui-contextual-architecture
 ```
 
-After extraction, use `swiftui-model-architecture/` as the plugin root. The archive includes the package only, not the Swift demo, Git metadata, or implementation notes. An archive is a distribution convenience, not an additional Agent Plugins requirement.
+After extraction, use `swiftui-contextual-architecture/` as the plugin root. The archive includes the package only, not the Swift demo, Git metadata, or implementation notes. An archive is a distribution convenience, not an additional Agent Plugins requirement.
 
 Agent Plugins specifies the portable package contract. Installation, publishing, registry submission, and update delivery are defined by the receiving client or service; the standard does not define a universal `publish` command.
