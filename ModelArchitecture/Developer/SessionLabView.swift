@@ -22,6 +22,7 @@ struct SessionLabScreen: View {
           ForEach(Page.allCases) { page in Text(page.rawValue).tag(page) }
         }
         .pickerStyle(.segmented)
+        .accessibilityIdentifier("session-lab-pages")
         .padding()
 
         List {
@@ -31,6 +32,7 @@ struct SessionLabScreen: View {
           case .events: eventsPage
           }
         }
+        .accessibilityIdentifier("session-lab-list")
       }
       .navigationTitle("Session Lab")
       .navigationBarTitleDisplayMode(.inline)
@@ -47,18 +49,25 @@ struct SessionLabScreen: View {
     if let session = uiContext.selectedSession {
       Section("Selected container") {
         LabeledContent("Environment", value: session.environment.title)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("Environment")
+          .accessibilityValue(session.environment.title)
+          .accessibilityIdentifier("session-environment")
         LabeledContent("Session ID", value: session.shortID)
           .accessibilityIdentifier("inspected-session-id")
         Text(session.status).foregroundStyle(session.isActive ? .primary : .secondary)
         LabeledContent("Stored value", value: "\(session.services.store.value)")
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("Stored value")
+          .accessibilityValue("\(session.services.store.value)")
           .accessibilityIdentifier("session-store-value")
 
         DisclosureGroup("Ownership details") {
-          identifier("Session", session.id)
-          identifier("Pre-login services", session.services.id)
-          identifier("Storage", session.services.store.id)
+          identifier("Session", session.id, accessibilityID: "ownership-session-id")
+          identifier("Pre-login services", session.services.id, accessibilityID: "ownership-services-id")
+          identifier("Storage", session.services.store.id, accessibilityID: "ownership-storage-id")
           if let authenticated = session.authenticatedServices {
-            identifier("Authenticated services", authenticated.id)
+            identifier("Authenticated services", authenticated.id, accessibilityID: "ownership-authenticated-id")
           } else {
             Text("Authenticated services: not created")
           }
@@ -120,6 +129,8 @@ struct SessionLabScreen: View {
       }
     } header: {
       Text("Retained containers (\(uiContext.sessions.count))")
+        .accessibilityIdentifier("retained-session-count")
+        .accessibilityValue("\(uiContext.sessions.count)")
     } footer: {
       Text("Selection is not ownership. Unauthenticated containers are Sessions too.")
     }
@@ -131,6 +142,7 @@ struct SessionLabScreen: View {
         }
       }
       .pickerStyle(.segmented)
+      .accessibilityIdentifier("new-session-environment")
       Button("Create Session") {
         uiContext.createSession(environment: environment)
       }
@@ -183,6 +195,9 @@ struct SessionLabScreen: View {
                 .font(.caption.monospaced())
             }
           }
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("disposed-session-\(record.id.uuidString)")
+          .accessibilityValue("\(record.finalValue)")
         }
       }
     }
@@ -194,14 +209,17 @@ struct SessionLabScreen: View {
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session-event-\(entry.sessionID.uuidString)")
       }
     }
   }
 
-  private func identifier(_ title: String, _ id: UUID) -> some View {
+  private func identifier(_ title: String, _ id: UUID, accessibilityID: String) -> some View {
     VStack(alignment: .leading, spacing: 3) {
       Text(title).font(.caption).foregroundStyle(.secondary)
       Text(id.uuidString).font(.caption.monospaced()).textSelection(.enabled)
+        .accessibilityIdentifier(accessibilityID)
     }
   }
 }

@@ -12,9 +12,11 @@ struct AppRootView: View {
             Text("\(session.environment.title) · \(session.shortID)")
               .font(.subheadline.monospaced().bold())
               .accessibilityIdentifier("selected-session-identity")
+              .accessibilityValue(session.id.uuidString)
             Text(session.status)
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityIdentifier("selected-session-status")
           } else {
             Text("No Session selected").font(.headline)
           }

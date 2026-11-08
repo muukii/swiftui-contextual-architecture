@@ -363,6 +363,9 @@ struct AccountScreen: View {
       List {
         Section("Profile") {
           Label(accountName, systemImage: "person.crop.circle.fill")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accountName)
+            .accessibilityIdentifier("account-name")
           Label("Community Member", systemImage: "checkmark.seal")
         }
 

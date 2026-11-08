@@ -172,13 +172,39 @@ xcodebuild \
   build
 ```
 
-Optional Maestro flows cover sign-in/readiness, routing, and disposal/replacement. With the app installed on a simulator:
+### XCUITest — code-managed UI regressions
+
+The shared `ModelArchitecture` scheme includes the `ModelArchitectureUITests` target. Open the project and use **Product → Test**, or choose an installed Simulator from `xcrun simctl list devices available` and run:
 
 ```bash
-maestro test Maestro/flows/
+xcodebuild \
+  -project ModelArchitecture.xcodeproj \
+  -scheme ModelArchitecture \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
+  -parallel-testing-enabled NO \
+  -resultBundlePath .tmp/SessionUITests.xcresult \
+  CODE_SIGNING_ALLOWED=NO \
+  test
 ```
 
-Model tests and compilation do not verify rendered layout, real authentication, durable persistence, or multiwindow behavior. Maestro requires a separate UI run.
+Use a new result-bundle path for each run; Xcode does not overwrite an existing `.xcresult`. The bundle contains assertions, activities, and failure screenshots/accessibility hierarchies.
+
+For local iteration, add `-collect-test-diagnostics never` to skip slow Simulator sysdiagnose collection after failures; test assertions and attachments are still recorded.
+
+[`SessionUITests`](ModelArchitectureUITests/SessionUITests.swift) drives the real app through XCUITest, with no test-only lifecycle hooks. Each case launches a fresh process and verifies the initial unauthenticated Production container. UUIDs are read from the UI and compared, never hard-coded. State waits and bounded scrolling replace fixed sleeps. The cases cover:
+
+- authentication success/failure with unchanged ownership, account-derived profile drafts, and fresh logout replacement;
+- simultaneously authenticated containers with independent values, retained navigation/preferences, and selection;
+- shutdown waiting for manually delivered callbacks, rejection of late writes/authentication, and selection during replacement;
+- pre-login disposal and recreation, Session-bound deferred deep links, tabs, Route Lab, restriction restoration, and the legacy URL alias.
+
+These replace the previous Maestro flows. Pure model tests remain separate (`swift test`); the UI test target is not part of the Swift package.
+
+### Devin — separately defined screen-interaction cases
+
+[`Tests/DevinE2E.md`](Tests/DevinE2E.md) defines eight repeatable cases for Devin: starting conditions, actions, expected UI evidence, ownership comparisons, and a result template. Ask Devin to run specified case IDs against a revision and record the interaction. This is a reusable test specification, **not** an executable script or a permanent pass/fail report.
+
+XCUITest results, Devin-operated results, and recordings are distinct artifacts. Neither compilation nor model tests alone proves rendered UI behavior; a recording proves one run, not automatic future execution. Real authentication, durable persistence, and multiwindow behavior remain outside this mock's verified contract.
 
 ## Agent Skill
 
@@ -192,4 +218,4 @@ Invoke `$swift-app-session-foundation` in clients that support this invocation. 
 
 - Xcode with Swift Observation support; iOS 17 or later
 - macOS 14+ and Swift 6+ for `swift test`
-- Maestro only for optional UI flows
+- XCUITest uses the existing Xcode installation; no third-party UI testing framework is required

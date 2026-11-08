@@ -47,6 +47,7 @@ private struct SignInStateView: View {
         }
       }
       .pickerStyle(.segmented)
+      .accessibilityIdentifier("mock-account-picker")
 
       if let errorMessage {
         Text(errorMessage).font(.callout).foregroundStyle(.red)
