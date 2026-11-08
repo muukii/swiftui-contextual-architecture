@@ -2,9 +2,23 @@
 
 ## Represent the ownership graph as state
 
-For an app with a single login, start with a root that retains either a logged-out or logged-in child. If the app retains multiple logins, separate `retained sessions` from the `selected session`: selection is not ownership. When multiple windows display the same login, share the resolved services and any in-flight resolution task through the root or a registry.
+Create a Session container with a specified environment and identity before login. Authentication is a state transition inside it, not the event that creates it. The process/app root owns a registry of these containers and their selection; it is not the per-environment Session itself.
 
-Use UIContext as the source of truth for externally controlled screen state, and service contexts as the owners of operations and domain resources. Do not construct services needed only after login while the app is logged out. Work sessions, such as recordings and imports, belong under the login session and have identities distinct from authentication. When replacing a context, reset SwiftUI's local state as needed, for example with `.id(...)`, so the previous user's input and navigation do not remain.
+```text
+App root / registry
+|-- retained Sessions
+|   `-- Session (fixed environment, SessionID)
+|       |-- session-scoped services and storage
+|       |-- UIContext
+|       `-- authentication state
+|           |-- unauthenticated child / authentication attempt
+|           `-- authenticated child / authenticated services
+`-- selected SessionID?
+```
+
+For a single-Session app, retain one such container. For multiple Sessions, keep `retained Sessions` separate from the `selected Session`: selection is not ownership. Unauthenticated Sessions can be retained and selected too. Multiple Sessions may target the same environment without sharing session-scoped resources. When multiple windows display the same Session, share its services, UIContext where appropriate, and any in-flight resolution task through the root or registry.
+
+Use UIContext as the source of truth for externally controlled screen state, and service contexts as the owners of operations and domain resources. Do not construct authenticated-only services before login. Work sessions, such as recordings and imports, belong under the appropriate Session-owned scope and have identities distinct from Session and authentication. When replacing a Session or authenticated child, reset SwiftUI's local state as needed, for example with `.id(...)`, so the previous user's input and navigation do not remain.
 
 Choose isolation such as `@MainActor` for UIContext to keep UI state consistent. It does not make a transition atomic across `await`. Define whether duplicate requests join the same task and whether competing requests are rejected or queued. The owner that starts a task, stream subscription, notification observer, or timer must also own how it stops.
 
@@ -14,24 +28,43 @@ Choose isolation such as `@MainActor` for UIContext to keep UI state consistent.
 | --- | --- |
 | Service environment | Separate hosts, tenants, and development or production deployments |
 | Account ID | Identify the authenticated account; it may be the same after another login |
-| Durable login ID | Identify the storage scope restored when a continuing login survives a process restart |
+| Session ID | Identify the environment-bound container from before login. Preserve it across authentication success; use a new one for a replacement Session. If restoration is supported, persist it to identify a continuing Session's storage scope across process restarts |
 | Runtime generation / owner identity | Decide whether a result may commit to the current context |
 | Credential slot / revision | Prevent old work from deleting newer credentials; introduce this distinction when needed |
 | Attempt ID | Associate authentication requests with callbacks and reject canceled or superseded attempts |
 
-Introduce only the distinctions the app needs. Do not reuse an account ID, process launch ID, or a context ID preserved across login without checking whether it can detect invalidation. Reject obsolete results even when the same account logs out and returns.
+Introduce only the distinctions the app needs. A Session ID is not an Account ID or a process launch ID. Because Session identity is preserved across login, use an attempt or authentication generation to reject superseded authentication work within it. Reject obsolete results after replacement even when the same account logs out and returns.
 
-## Commit authentication and restore a login
+## Commit authentication inside a Session and restore its state
 
-The authentication owner validates the result and binds it to a fixed environment and attempt. Do not manufacture authenticated state from a UIIntent such as `.showHome`. On restoration, validate stored metadata and required credentials. Do not treat corrupt or unreadable data as absent data and silently create another identity.
+Construct the Session's pre-login dependencies first. The Session-owned authentication owner validates the result and binds it to that Session's fixed environment, identity, and attempt. Prepare and publish an authenticated child inside the existing Session; do not replace the outer container merely because login succeeded. Do not manufacture authenticated state from a UIIntent such as `.showHome`.
 
-Immediately before publishing a prepared context, recheck that its originating attempt or generation is still valid. Intermediate persistence and credential updates need validity checks at the owner of those operations as well; a final root-level check cannot prevent earlier contamination. Cleanup of an invalid result must target only resources owned by that attempt, without accidentally ending the current context with the same identity.
+If restoration is supported, restore the continuing Session's environment and identity, then validate its authentication metadata and required credentials before publishing authenticated capabilities. An unauthenticated Session does not require credentials. Do not treat corrupt or unreadable data as absent data and silently create another identity.
+
+Immediately before publishing a prepared authenticated child, recheck that its originating Session is still live and its attempt or generation is still valid. Intermediate persistence and credential updates need validity checks at the owner of those operations as well; a final root-level check cannot prevent earlier contamination. Cleanup of an invalid result must target only resources owned by that attempt, without accidentally ending the current context with the same identity.
 
 Retain attempts for one-time email links and similar inputs under an appropriate owner so replacing a view cannot consume the input twice. Once a link has been consumed, retain authentication completion or rollback until consistency is restored, even if the view's work is canceled. Define whether another attempt can begin after authentication rollback fails. Distinguish these operations from a search that can simply be discarded when its UI closes.
 
+## Dispose from any phase; replace the whole Session on logout
+
+A Session can be explicitly ended before login, while authentication is in flight, or after login. End the owned authentication attempt as well as authenticated work when applicable. If an attempt has consumed a one-time input, retain its completion or rollback under the termination owner until consistency is restored, but never admit its result into a replacement Session. Disposal is an ordered lifecycle operation, not immediate success on dropping a reference.
+
+Use this default logout contract:
+
+```text
+Session A (environment E, authenticated)
+  -> reserve termination, save required state, retire and invalidate A
+  -> stop/drain A's work and close its resources
+  -> create Session B (environment E, new SessionID, unauthenticated)
+```
+
+Session B uses fresh session-scoped dependencies and storage bindings, not A's reset objects. Any explicitly retained account data must be recovered through a defined policy, not by reviving A. Physical cleanup may continue under a separate owner only after A is isolated and cannot mutate B. If a global SDK cannot isolate concurrent Sessions or cleanup, serialize its teardown and new authentication instead of assuming new Swift objects provide isolation.
+
+Changing environments also requires a different Session, not mutating the environment of an existing container. Selecting another retained Session does not dispose the old one. An alternate logout policy must explicitly establish equivalent isolation rather than silently treating an authentication flag reset as whole-Session replacement.
+
 ## Give termination explicit stages
 
-The following rules constrain ordering. They do not require a separate type for every stage.
+These stages apply in unauthenticated and authenticated phases; skip only work that does not exist in that phase. They constrain ordering, not a separate type for every stage. Accept a disposal request in any phase, but retain recoverable state and report failure if required shutdown cannot complete.
 
 ### 1. Reserve the transition and control admission
 
@@ -61,19 +94,20 @@ If work cannot be stopped, contain it in its invalidated scope, keep its persist
 
 ### 5. Apply cleanup policy and update published state
 
-Credential invalidation, store closure, login identity retirement, and data deletion are separate operations. Adapt their implementation to the SDK and product requirements, while first establishing the boundary that prevents a new login from reusing old credentials. Preserve the exact target and retry state when deletion fails, and do not touch the next login's storage.
+Credential invalidation, store closure, Session identity retirement, and data deletion are separate operations. An unauthenticated Session still needs work shutdown and resource closure, even when it has no credentials to remove. Adapt cleanup to the SDK and product requirements, while first establishing the boundary that prevents a replacement Session from reusing old credentials. Preserve the exact target and retry state when deletion fails, and do not touch the replacement's storage.
 
-Showing the login screen may happen before termination is complete. The termination owner retains a context while cleanup is in progress and removes it from the registry after completion. Do not ignore deletion failures and report that data was erased.
+Showing the replacement's login screen may happen before old cleanup is complete only if isolation is established. The termination owner retains the old container while cleanup is in progress and removes it from the registry after completion; it is not selectable for ordinary work after retirement. Do not ignore deletion failures and report that data was erased.
 
 ## Windows, selection, and the process
 
 | Operation | Outcome to define |
 | --- | --- |
-| Window close | End that window's UI; decide whether the shared login and unsaved edits remain |
-| Show login / deselect | Distinguish deselection from logout; specify which background work continues and which work, such as recording, stops |
-| Select another session | Adjust work in the previous selection, activate the new selection, and update any SDK-wide user state |
-| End one login | Save, retire, and terminate only the specified owner |
-| Process quit / update | Confirm all required saves, then drain work. Do not retire a continuing login's restoration identity merely because the process is exiting. Respond asynchronously to OS termination requests when needed |
+| Window close | End that window's UI; decide whether the shared Session and unsaved edits remain |
+| Deselect / show an unauthenticated Session | Do not implicitly log out or dispose the previous selection; specify which background work continues and which work, such as recording, stops |
+| Select another Session | Adjust work in the previous selection, activate the new selection, and update any SDK-wide user state |
+| Dispose one Session | Save as applicable, retire, and terminate only that container and its children, including pre-login attempts |
+| Logout | Dispose the authenticated Session and create a fresh unauthenticated Session for the same environment by default |
+| Process quit / update | Confirm all required saves, then drain work. Do not retire a continuing Session's restoration identity merely because the process is exiting. Respond asynchronously to OS termination requests when needed |
 
 Define recovery after a crash rather than assuming orderly shutdown always runs.
 
