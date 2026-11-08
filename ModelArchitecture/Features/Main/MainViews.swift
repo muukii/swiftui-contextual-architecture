@@ -14,6 +14,7 @@ struct SignedInScreen: View {
     case .setup(let setupUIContext):
       ProfileSetupScreen(
         uiContext: setupUIContext,
+        initialDisplayName: uiContext.account.rawValue,
         pendingIntentTitle: pendingIntentTitle,
         onComplete: onCompleteSetup
       )

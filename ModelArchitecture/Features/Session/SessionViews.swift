@@ -91,10 +91,22 @@ struct ProfileSetupScreen: View {
   let pendingIntentTitle: String?
   let onComplete: () -> Void
 
-  @State private var displayName = "Taylor"
+  @State private var displayName: String
   @State private var selectedTopics: Set<String> = ["Design"]
 
   private let topics = ["Design", "Technology", "Local", "Culture"]
+
+  init(
+    uiContext: ProfileSetupUIContext,
+    initialDisplayName: String,
+    pendingIntentTitle: String?,
+    onComplete: @escaping () -> Void
+  ) {
+    self.uiContext = uiContext
+    self.pendingIntentTitle = pendingIntentTitle
+    self.onComplete = onComplete
+    _displayName = State(initialValue: initialDisplayName)
+  }
 
   var body: some View {
     NavigationStack {
@@ -125,6 +137,7 @@ struct ProfileSetupScreen: View {
       Section("Profile") {
         TextField("Display name", text: $displayName)
           .textContentType(.name)
+          .accessibilityIdentifier("profile-display-name")
       }
 
       Section {
