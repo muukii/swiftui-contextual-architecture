@@ -2,27 +2,28 @@ import SwiftUI
 
 /// A developer-facing stateful host for exercising external routing scenarios.
 struct RouteLabScreen: View {
-  let uiModel: RouteLabUIModel
-  @Bindable var appUIModel: AppUIModel
+  let uiContext: RouteLabUIContext
+  @Bindable var sessionUIContext: SessionUIContext
+  let onReplaceSession: () -> Void
 
-  @State private var urlText = "uimodel-demo://messages/conversation/conversation-1"
+  @State private var urlText = "uicontext-demo://messages/conversation/conversation-1"
   @State private var urlValidationMessage: String?
 
   var body: some View {
     NavigationStack {
       List {
-        Section("Current UIModel Tree") {
-          Text(appUIModel.treeDescription)
+        Section("Current UIContext Tree") {
+          Text(sessionUIContext.treeDescription)
             .font(.caption.monospaced())
             .textSelection(.enabled)
 
           LabeledContent("Last routing result") {
-            Text(appUIModel.routingMessage)
+            Text(sessionUIContext.routingMessage)
               .multilineTextAlignment(.trailing)
           }
 
           LabeledContent("Route Lab scope") {
-            Text(uiModel.id.uuidString.prefix(8))
+            Text(uiContext.id.uuidString.prefix(8))
               .font(.caption.monospaced())
           }
         }
@@ -51,14 +52,14 @@ struct RouteLabScreen: View {
         }
 
         Section("Custom URL") {
-          TextField("uimodel-demo://…", text: $urlText)
+          TextField("uicontext-demo://…", text: $urlText)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .font(.caption.monospaced())
 
           Button("Route URL") {
             urlValidationMessage = nil
-            if !appUIModel.handle(urlText: urlText) {
+            if !sessionUIContext.handle(urlText: urlText) {
               urlValidationMessage = "Unsupported URL"
             }
           }
@@ -70,7 +71,7 @@ struct RouteLabScreen: View {
           }
         }
 
-        Section("Independent Presentation Lanes") {
+        Section("Session Presentation Lanes") {
           routeButton(
             "Show Announcement",
             systemImage: "megaphone",
@@ -95,9 +96,7 @@ struct RouteLabScreen: View {
             intent: .restoreAccess
           )
 
-          Button("Reset to Signed Out", role: .destructive) {
-            appUIModel.signOut()
-          }
+          Button("Replace Entire Session", role: .destructive, action: onReplaceSession)
         } header: {
           Text("Scenario Controls")
         } footer: {
@@ -108,7 +107,7 @@ struct RouteLabScreen: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
-          Button("Done", action: appUIModel.dismissSheet)
+          Button("Done", action: sessionUIContext.dismissSheet)
         }
       }
     }
@@ -120,8 +119,8 @@ struct RouteLabScreen: View {
     intent: UIIntent
   ) -> some View {
     Button {
-      appUIModel.dismissSheet()
-      appUIModel.send(intent)
+      sessionUIContext.dismissSheet()
+      sessionUIContext.send(intent)
     } label: {
       Label(title, systemImage: systemImage)
     }

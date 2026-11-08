@@ -43,7 +43,7 @@ struct SampleConversation: Identifiable, Hashable, Sendable {
   let symbol: String
 }
 
-/// A message value owned by a `ConversationUIModel`.
+/// A message value owned by a `ConversationUIContext`.
 struct SampleMessage: Identifiable, Hashable, Sendable {
   let id: UUID
   let text: String
@@ -148,4 +148,3 @@ enum SampleContent {
       )
   }
 }
-

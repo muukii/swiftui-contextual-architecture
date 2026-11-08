@@ -2,10 +2,11 @@ import Foundation
 
 /// Owns the selected tab and all four retained tab UI scopes.
 ///
-/// The child UIModels are created once. Switching tabs changes visibility only;
+/// The child UIContexts are created once. Switching tabs changes visibility only;
 /// it does not discard another tab's navigation path or screen state.
+@MainActor
 @Observable
-final class TabContainerUIModel {
+final class TabContainerUIContext {
   /// The stable, externally addressable tabs in the prototype.
   enum Tab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
@@ -30,18 +31,19 @@ final class TabContainerUIModel {
   }
 
   var selectedTab: Tab = .home
-  let home = HomeUIModel()
-  let activity = ActivityUIModel()
-  let messages = MessagesUIModel()
-  let account = AccountUIModel()
+  let home = HomeUIContext()
+  let activity = ActivityUIContext()
+  let messages = MessagesUIContext()
+  let account = AccountUIContext()
 }
 
 /// Owns Home's ordered navigation stack.
+@MainActor
 @Observable
-final class HomeUIModel {
+final class HomeUIContext {
   /// Screens pushed above the Home root.
   enum Destination: Hashable {
-    case story(StoryUIModel)
+    case story(StoryUIContext)
   }
 
   var path: [Destination] = []
@@ -49,18 +51,19 @@ final class HomeUIModel {
 
   /// Pushes a story as an in-app navigation action.
   func open(_ story: SampleStory) {
-    path.append(.story(StoryUIModel(story: story)))
+    path.append(.story(StoryUIContext(story: story)))
   }
 
   /// Replaces the stack with the canonical path for an external route.
   func route(toStoryID id: String) {
-    path = [.story(StoryUIModel(story: SampleContent.story(id: id)))]
+    path = [.story(StoryUIContext(story: SampleContent.story(id: id)))]
   }
 }
 
 /// The stateful child scope stored directly in Home's navigation path.
+@MainActor
 @Observable
-final class StoryUIModel: Identifiable, Hashable {
+final class StoryUIContext: Identifiable, Hashable {
   nonisolated let id: String
   let story: SampleStory
   var isBookmarked = false
@@ -70,7 +73,7 @@ final class StoryUIModel: Identifiable, Hashable {
     self.story = story
   }
 
-  nonisolated static func == (lhs: StoryUIModel, rhs: StoryUIModel) -> Bool {
+  nonisolated static func == (lhs: StoryUIContext, rhs: StoryUIContext) -> Bool {
     lhs === rhs
   }
 
@@ -80,11 +83,12 @@ final class StoryUIModel: Identifiable, Hashable {
 }
 
 /// Owns Activity's selected section and ordered navigation stack.
+@MainActor
 @Observable
-final class ActivityUIModel {
+final class ActivityUIContext {
   /// Screens pushed above the Activity root.
   enum Destination: Hashable {
-    case detail(ActivityDetailUIModel)
+    case detail(ActivityDetailUIContext)
   }
 
   var selectedFilter: ActivityFilter = .all
@@ -99,7 +103,7 @@ final class ActivityUIModel {
 
   /// Pushes an activity detail while preserving the selected filter.
   func open(_ activity: SampleActivity) {
-    path.append(.detail(ActivityDetailUIModel(activity: activity)))
+    path.append(.detail(ActivityDetailUIContext(activity: activity)))
   }
 
   /// Selects an externally addressed section and returns to its root.
@@ -110,8 +114,9 @@ final class ActivityUIModel {
 }
 
 /// The child scope stored directly in Activity's navigation path.
+@MainActor
 @Observable
-final class ActivityDetailUIModel: Identifiable, Hashable {
+final class ActivityDetailUIContext: Identifiable, Hashable {
   nonisolated let id: String
   let activity: SampleActivity
 
@@ -120,7 +125,7 @@ final class ActivityDetailUIModel: Identifiable, Hashable {
     self.activity = activity
   }
 
-  nonisolated static func == (lhs: ActivityDetailUIModel, rhs: ActivityDetailUIModel) -> Bool {
+  nonisolated static func == (lhs: ActivityDetailUIContext, rhs: ActivityDetailUIContext) -> Bool {
     lhs === rhs
   }
 
@@ -130,11 +135,12 @@ final class ActivityDetailUIModel: Identifiable, Hashable {
 }
 
 /// Owns Messages' ordered navigation stack.
+@MainActor
 @Observable
-final class MessagesUIModel {
+final class MessagesUIContext {
   /// Screens pushed above the Messages root.
   enum Destination: Hashable {
-    case conversation(ConversationUIModel)
+    case conversation(ConversationUIContext)
   }
 
   var path: [Destination] = []
@@ -142,14 +148,14 @@ final class MessagesUIModel {
 
   /// Pushes a conversation as an in-app navigation action.
   func open(_ conversation: SampleConversation) {
-    path.append(.conversation(ConversationUIModel(conversation: conversation)))
+    path.append(.conversation(ConversationUIContext(conversation: conversation)))
   }
 
   /// Replaces the stack with the canonical path for an external route.
   func route(toConversationID id: String) {
     path = [
       .conversation(
-        ConversationUIModel(conversation: SampleContent.conversation(id: id))
+        ConversationUIContext(conversation: SampleContent.conversation(id: id))
       )
     ]
   }
@@ -159,8 +165,9 @@ final class MessagesUIModel {
 ///
 /// Sent messages belong to the screen scope. The unsent composer draft remains
 /// local to the stateful SwiftUI host because no external caller needs it.
+@MainActor
 @Observable
-final class ConversationUIModel: Identifiable, Hashable {
+final class ConversationUIContext: Identifiable, Hashable {
   nonisolated let id: String
   let conversation: SampleConversation
   private(set) var messages: [SampleMessage]
@@ -183,7 +190,7 @@ final class ConversationUIModel: Identifiable, Hashable {
     messages.append(SampleMessage(text: text, isFromCurrentUser: true))
   }
 
-  nonisolated static func == (lhs: ConversationUIModel, rhs: ConversationUIModel) -> Bool {
+  nonisolated static func == (lhs: ConversationUIContext, rhs: ConversationUIContext) -> Bool {
     lhs === rhs
   }
 
@@ -193,34 +200,36 @@ final class ConversationUIModel: Identifiable, Hashable {
 }
 
 /// Owns Account's ordered navigation stack.
+@MainActor
 @Observable
-final class AccountUIModel {
+final class AccountUIContext {
   /// Screens pushed above the Account root.
   enum Destination: Hashable {
-    case preferences(PreferencesUIModel)
+    case preferences(PreferencesUIContext)
   }
 
   var path: [Destination] = []
 
   /// Pushes a fresh preferences scope from the Account root.
   func openPreferences() {
-    path.append(.preferences(PreferencesUIModel()))
+    path.append(.preferences(PreferencesUIContext()))
   }
 
   /// Replaces the stack with the canonical preferences route.
   func routeToPreferences() {
-    path = [.preferences(PreferencesUIModel())]
+    path = [.preferences(PreferencesUIContext())]
   }
 }
 
 /// The stateful child scope stored directly in Account's navigation path.
+@MainActor
 @Observable
-final class PreferencesUIModel: Identifiable, Hashable {
+final class PreferencesUIContext: Identifiable, Hashable {
   nonisolated let id = UUID()
   var notificationsEnabled = true
   var compactAppearance = false
 
-  nonisolated static func == (lhs: PreferencesUIModel, rhs: PreferencesUIModel) -> Bool {
+  nonisolated static func == (lhs: PreferencesUIContext, rhs: PreferencesUIContext) -> Bool {
     lhs === rhs
   }
 
@@ -228,4 +237,3 @@ final class PreferencesUIModel: Identifiable, Hashable {
     hasher.combine(ObjectIdentifier(self))
   }
 }
-

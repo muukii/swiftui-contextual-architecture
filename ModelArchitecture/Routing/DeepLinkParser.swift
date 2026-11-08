@@ -2,16 +2,17 @@ import Foundation
 
 /// Converts external URLs into high-level `UIIntent` values.
 ///
-/// Parsing is deliberately independent of SwiftUI and the UIModel tree. This
+/// Parsing is deliberately independent of SwiftUI and the UIContext tree. This
 /// keeps URL syntax at the application boundary and makes the routing request
 /// usable from push notifications, widgets, and tests as well as deep links.
 struct DeepLinkParser: Sendable {
   /// The custom URL scheme registered by the sample application.
-  static let scheme = "uimodel-demo"
+  static let scheme = "uicontext-demo"
 
   /// Parses a URL when it belongs to this application's public route space.
   func intent(for url: URL) -> UIIntent? {
-    guard url.scheme?.lowercased() == Self.scheme else {
+    guard let scheme = url.scheme?.lowercased(),
+          scheme == Self.scheme || scheme == "uimodel-demo" else {
       return nil
     }
 

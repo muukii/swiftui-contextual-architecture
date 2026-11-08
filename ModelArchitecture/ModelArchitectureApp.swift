@@ -9,14 +9,14 @@ import SwiftUI
 
 @main
 struct ModelArchitectureApp: App {
-  /// The single root UIModel retained for the lifetime of this scene.
-  @State private var uiModel = AppUIModel()
+  /// One registry shared by this app's windows, not one Session per window.
+  @State private var uiContext = AppUIContext()
 
   var body: some Scene {
     WindowGroup {
-      AppRootView(uiModel: uiModel)
+      AppRootView(uiContext: uiContext)
         .onOpenURL { url in
-          uiModel.handle(url: url)
+          uiContext.handle(url: url)
         }
     }
   }

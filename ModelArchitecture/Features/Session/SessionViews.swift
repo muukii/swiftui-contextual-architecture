@@ -2,14 +2,17 @@ import SwiftUI
 
 /// The stateful host for the signed-out screen.
 struct SignInScreen: View {
-  let uiModel: SignInUIModel
+  let uiContext: SignInUIContext
   let pendingIntentTitle: String?
-  let onSignIn: () -> Void
+  let onSignIn: (DemoAccount) -> Void
+  @State private var account: DemoAccount = .taylor
 
   var body: some View {
     SignInStateView(
       pendingIntentTitle: pendingIntentTitle,
-      onSignIn: onSignIn
+      errorMessage: uiContext.errorMessage,
+      account: $account,
+      onSignIn: { onSignIn(account) }
     )
   }
 }
@@ -17,6 +20,8 @@ struct SignInScreen: View {
 /// A value-and-action-only rendering view for the signed-out state.
 private struct SignInStateView: View {
   let pendingIntentTitle: String?
+  let errorMessage: String?
+  @Binding var account: DemoAccount
   let onSignIn: () -> Void
 
   var body: some View {
@@ -28,12 +33,24 @@ private struct SignInStateView: View {
         .foregroundStyle(.indigo.gradient)
 
       VStack(spacing: 8) {
-        Text("UIModel Routing")
-          .font(.largeTitle.bold())
+        Text("Your Session already exists")
+          .font(.title.bold())
 
-        Text("A generic community app used to prototype an externally controllable SwiftUI hierarchy.")
+        Text("Login is work inside this environment-bound container, not the beginning of its lifetime.")
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
+      }
+
+      Picker("Mock account", selection: $account) {
+        ForEach(DemoAccount.allCases) { account in
+          Text(account.rawValue).tag(account)
+        }
+      }
+      .pickerStyle(.segmented)
+      .accessibilityIdentifier("mock-account-picker")
+
+      if let errorMessage {
+        Text(errorMessage).font(.callout).foregroundStyle(.red)
       }
 
       if let pendingIntentTitle {
@@ -55,7 +72,7 @@ private struct SignInStateView: View {
 
       Spacer()
 
-      Text("Use Route Lab to send a deep link before signing in.")
+      Text("Sessions inspects ownership and disposal. Route Lab sends intents, even before login. Authentication is simulated.")
         .font(.footnote)
         .foregroundStyle(.tertiary)
     }
@@ -68,17 +85,29 @@ private struct SignInStateView: View {
 
 /// The stateful host for profile setup.
 ///
-/// Form drafts are local interaction state. Only `uiModel.step`, which changes
+/// Form drafts are local interaction state. Only `uiContext.step`, which changes
 /// the visible screen structure, is stored outside the view.
 struct ProfileSetupScreen: View {
-  @Bindable var uiModel: ProfileSetupUIModel
+  @Bindable var uiContext: ProfileSetupUIContext
   let pendingIntentTitle: String?
   let onComplete: () -> Void
 
-  @State private var displayName = "Taylor"
+  @State private var displayName: String
   @State private var selectedTopics: Set<String> = ["Design"]
 
   private let topics = ["Design", "Technology", "Local", "Culture"]
+
+  init(
+    uiContext: ProfileSetupUIContext,
+    initialDisplayName: String,
+    pendingIntentTitle: String?,
+    onComplete: @escaping () -> Void
+  ) {
+    self.uiContext = uiContext
+    self.pendingIntentTitle = pendingIntentTitle
+    self.onComplete = onComplete
+    _displayName = State(initialValue: initialDisplayName)
+  }
 
   var body: some View {
     NavigationStack {
@@ -92,14 +121,14 @@ struct ProfileSetupScreen: View {
           }
         }
 
-        switch uiModel.step {
+        switch uiContext.step {
         case .profile:
           profileStateView
         case .interests:
           interestsStateView
         }
       }
-      .navigationTitle(uiModel.step == .profile ? "Create Profile" : "Choose Topics")
+      .navigationTitle(uiContext.step == .profile ? "Create Profile" : "Choose Topics")
       .navigationBarBackButtonHidden()
     }
   }
@@ -109,10 +138,11 @@ struct ProfileSetupScreen: View {
       Section("Profile") {
         TextField("Display name", text: $displayName)
           .textContentType(.name)
+          .accessibilityIdentifier("profile-display-name")
       }
 
       Section {
-        Button("Continue", action: uiModel.continueToInterests)
+        Button("Continue", action: uiContext.continueToInterests)
           .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
           .accessibilityIdentifier("setup-continue-button")
       } footer: {
@@ -153,4 +183,3 @@ struct ProfileSetupScreen: View {
     }
   }
 }
-

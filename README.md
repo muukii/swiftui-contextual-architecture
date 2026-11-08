@@ -1,181 +1,166 @@
 # SwiftUI Contextual Architecture
 
-This repository contains a small SwiftUI routing prototype and an agent skill for the broader Session lifecycle contract below. The current demo represents app-level routing as an explicit **UIModel tree**.
+A SwiftUI demo of **environment-bound Session containers**, **UIContext** trees, and one-shot **UIIntent** routing. It implements the ownership model in the repository's [Session foundation skill](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md).
 
-The demo uses a fictional community app with authentication, initial setup, four retained tabs, deep links, app-wide presentations, and restricted states. Names and sample content are deliberately generic so the architecture can be discussed publicly without depending on a real product.
+Authentication and storage are deliberately simulated. Production and Staging are separate mock environments; neither connects to a server.
 
-## Session lifecycle contract
+## Session is a container, not a login period
 
-The architecture's **Session** is a container created for a specified environment **before login**, not the period after authentication. Its environment and identity are fixed at creation. Login and other session-scoped operations run inside it; authentication success changes its child scope, not the enclosing Session's identity.
-
-```text
-App root / Session registry
-|-- Session A (environment E, created before login)
-|   |-- session-scoped services, storage, and UIContext
-|   `-- authentication: unauthenticated -> authenticated child
-|-- Session B (another independent container, possibly unauthenticated)
-`-- selected SessionID?
-```
-
-A Session can be explicitly terminated from any phase. Default logout disposes the entire Session and creates a fresh unauthenticated Session for the same environment with a new identity, instead of resetting and reusing the old container. Disposal must stop/drain owned work and reject obsolete results; replacement alone does not prevent old callbacks or writes from racing with new work. Disposal and physical deletion of persistent data are separate policies.
-
-Retaining a Session, selecting it, and authenticating it are separate concepts. Multiple Sessions can use the same environment with isolated session-scoped resources. Changing a Session's environment means creating or selecting a different container, not mutating the existing one.
-
-**Current demo limitation:** the Swift demo below still uses `AppUIModel.Session` as an authentication-state enum under one root. It does not yet implement independent environment-bound Session containers, whole-Session logout replacement, or multiple retained Sessions. Its existing `UIModel` names and routing behavior are unchanged. The [agent skill](#agent-skill) documents the lifecycle contract for future implementations.
-
-## The idea
-
-Navigation is larger than a single `NavigationPath`. A production-shaped app may have all of these at once:
-
-- an authentication-state boundary such as signed out or signed in;
-- a setup or preparation gate before the main UI is ready;
-- several tab roots that remain alive while another tab is visible;
-- an independent navigation stack in each tab;
-- app-wide sheets and blocking layers;
-- external requests that arrive before their destination can be shown.
-
-The prototype models that shape explicitly:
+A Session starts **before login** with a fixed environment and UUID. Its services, in-memory storage, and UIContext already exist. Authentication creates an authenticated child inside that same container.
 
 ```text
-external URL or app event
-          |
-          v
-       UIIntent                 one-shot request
-          |
-          v
-      AppUIModel                persistent UI state
-      |-- session
-      |   |-- signedOut
-      |   `-- signedIn
-      |       |-- setup
-      |       `-- main
-      |           |-- preparing
-      |           |-- tabs
-      |           `-- restricted
-      |-- pendingIntent?
-      |-- sheet?
-      `-- blockingNotice?
+AppUIContext (process-owned registry and selection)
+|-- sessions[]
+|   |-- Session A (Production, immutable UUID)
+|   |   |-- SessionServices -> SessionStore
+|   |   |-- SessionUIContext
+|   |   |   |-- authentication
+|   |   |   |   |-- signedOut(SignInUIContext)
+|   |   |   |   |-- authenticating(attemptID, account)
+|   |   |   |   |-- signedIn(SignedInUIContext)
+|   |   |   |   |   |-- setup(ProfileSetupUIContext)
+|   |   |   |   |   `-- main(MainUIContext)
+|   |   |   |   |       |-- surface: preparing / tabs / restricted
+|   |   |   |   |       `-- retained TabContainerUIContext
+|   |   |   |   |           |-- HomeUIContext
+|   |   |   |   |           |-- ActivityUIContext
+|   |   |   |   |           |-- MessagesUIContext
+|   |   |   |   |           `-- AccountUIContext
+|   |   |   |   `-- closing / closed
+|   |   |   |-- pendingIntent?
+|   |   |   |-- sheet?
+|   |   |   `-- blockingNotice?
+|   |   `-- AuthenticatedServices? (created only on login success)
+|   `-- Session B (independent, possibly unauthenticated)
+|-- selectedSessionID?
+|-- retained termination tasks
+`-- mock transport and bounded diagnostic history
 ```
 
-SwiftUI then projects this state into views.
+- **Creation** selects an environment, not an account.
+- **Login** runs inside an existing Session. Success preserves its UUID, services, storage, and UIContext.
+- **Selection** only changes which retained container is shown. Other Sessions keep their work, authentication, and navigation state.
+- **Disposal** is allowed before login, during login, setup, preparation, or normal use.
+- **Logout** ends the whole old Session, then creates a fresh unauthenticated one for the same environment. It never just resets an authentication flag.
+- **Environment changes** require creating or selecting another Session.
 
-## Why `UIModel`?
+All transitions and store writes are serialized on the main actor. Service tasks belong to the Session, not to a View or a mutable global “current account.”
 
-`ViewModel` often suggests one helper object per view. Here, the object has a different responsibility: it describes the intended UI topology, owns the lifetimes of child UI scopes, and handles transitions between them. `UIModel` makes that role explicit while leaving domain models independent of the UI.
+## Try the demo
 
-The central rule is slightly more precise than “model existence equals screen visibility”:
+Open `ModelArchitecture.xcodeproj` and run the `ModelArchitecture` scheme on an iOS Simulator. One unauthenticated Production Session is created on launch. The top bar always shows the selected Session's environment, short UUID, and state.
 
-> A UIModel's existence means that its UI scope is retained. Selection and presentation state determine whether that scope is currently visible.
+### 1. Observe login inside an existing container
 
-That distinction matters for tabs. All four tab UIModels can continue to exist while only one tab is selected, preserving each tab's navigation stack.
+1. Open **Sessions**. Note the **Session ID**, **Stored value**, and **Ownership details**.
+2. **Increment Session Value** before login.
+3. Tap **Done**, choose Taylor or Jordan, then **Sign In**.
+4. Authentication remains pending until **Complete Sign In** or **Fail Sign In** is tapped.
+5. On success, complete **Continue → Finish Setup → Enter App**.
+6. Reopen **Sessions**: the Session, pre-login service, and storage identities are unchanged; only authenticated services were added.
 
-## `UIIntent` and `UIModel` are different
+Failure returns to a retryable signed-out child in the same Session. These are mock accounts, not credentials.
 
-A `UIIntent` is a one-shot request:
+### 2. Retain and switch containers
 
-```swift
-enum UIIntent {
-  case openStory(id: String)
-  case showActivity(filter: ActivityFilter)
-  case openConversation(id: String)
-  case openPreferences
-  case showAnnouncement
-}
-```
+In **Sessions**, scroll to **New container**, choose Production or Staging, and tap **Create Session**. The previous Session is not signed out. Select either row under **Retained containers** to return to it.
 
-The UIModel tree is the durable result after that request is interpreted. For example, `openConversation` selects the Messages tab and installs a conversation UIModel in that tab's canonical navigation path. The intent does not remain the source of truth after routing finishes.
+Create multiple containers even for the same environment/account. Their stored values and navigation paths remain independent. View-local drafts are not promised to survive a switch; externally controlled UIContext state is.
 
-If the app is not ready, the root stores the intent as `pendingIntent`. Authentication, setup, and preparation continue normally; the intent is replayed when the tab container is available.
+### 3. Dispose during authentication or background work
+
+1. Start **Sign In**, then tap **Dispose During Sign In**; alternatively start **Background Write** in the lab and **Dispose Session**.
+2. The Session enters **Closing** immediately: new work and writes are rejected, pending routes and presentations are discarded.
+3. The mock SDK deliberately ignores cancellation. **Deliver Pending Callbacks** on the closing screen, or use **Sessions → Callbacks**.
+4. Old results are rejected. Only after owned work drains is storage closed and the Session removed.
+5. **Sessions → Events** shows the rejection, close, disposal, and final old stored value.
+
+You can create or select other Sessions while a retired one is draining. Delivering its callbacks never changes another container's store.
+
+### 4. Log out by replacing the whole Session
+
+From **Account** or the Session Lab, tap **Log Out & Replace Session**. The replacement has the **same environment**, but new Session/service/storage UUIDs, value zero, and no authenticated child or inherited route.
+
+For a visible drain, start a background write first. Replacement waits for callback delivery and old storage closure. Selecting another Session during that wait is respected; completion retains the replacement without stealing selection.
+
+## Termination and failure policy
 
 ```text
-deep link
-   |
-   v
-UIIntent ---- app not ready ----> pendingIntent
-   |                                  |
-   | app ready                        | readiness changes
-   v                                  v
-mutate the UIModel tree <-------------+
+close UI/service/write admission and invalidate pending routing
+  -> request cancellation
+  -> await every owned operation (including cancellation-ignoring callbacks)
+  -> close the old store
+  -> release authenticated children and mark closed
+  -> remove from registry
+  -> optionally create fresh same-environment Session
 ```
 
-## Demo topology
+`Session.terminate()` and `AppUIContext.endSession(_:replacing:)` retain their tasks independently of View lifetime. Repeated same-policy requests join the existing shutdown; conflicting dispose/replace requests are rejected. The old container cannot become active again.
 
-The sample exercises the following states:
+A callback must pass the original service's admission/cancellation checks. Authentication additionally checks the current attempt inside its originating Session. A Session UUID also acts as the lifetime boundary across logout/relogin.
 
-```text
-AppUIModel
-|-- session
-|   |-- signedOut(SignInUIModel)
-|   `-- signedIn(SignedInUIModel)
-|       |-- setup(ProfileSetupUIModel)
-|       `-- main(MainUIModel)
-|           |-- preparing
-|           |-- tabs(TabContainerUIModel)
-|           |   |-- HomeUIModel
-|           |   |-- ActivityUIModel
-|           |   |-- MessagesUIModel
-|           |   `-- AccountUIModel
-|           `-- restricted
-|-- sheet?
-|-- blockingNotice?
-`-- pendingIntent?
-```
+There is **no timeout** in this deterministic mock: forgetting to deliver an outstanding callback leaves it closing, not falsely “disposed.” Authentication failures are retryable; background request failures leave the value unchanged. The in-memory close cannot fail. Disk-save failures, cleanup retries, credential deletion, and remote revocation need real integrations and their own policies; none is silently treated as successful here.
 
-The four tab UIModels are retained together. Each owns its own typed path, so switching tabs does not destroy another tab's navigation history. App-level presentation state lives above the tabs because it is not part of any one stack.
+## UIContext and UIIntent
 
-## What remains local to a view
+**UIContext** represents retained UI scope, topology, selection, paths, and presentation. It is not the general owner of networking or a helper object for every View.
 
-The architecture does not move every piece of screen state into the UIModel tree.
+> Existence means the UI scope is retained. Selection and presentation determine whether it is visible.
 
-Use a UIModel when state must outlive a particular view instance, participate in routing, or be controlled externally. Keep ephemeral interaction state in a stateful SwiftUI host.
+**UIIntent** is a one-shot routing request, not authentication evidence or a second state store. For example, `openConversation` selects Messages and installs its canonical path. Lifecycle actions call the owning Session or registry directly rather than joining one giant intent enum.
 
-| State | Owner |
+The four tab contexts are retained together; restricted mode hides rather than destroys them. Session-wide sheets and blocking notices sit outside their navigation paths. **Route Lab** exposes these transitions and the current context tree.
+
+| State / operation | Owner |
 |---|---|
-| authentication state (`session` in the current demo), selected tab, paths, presentations | UIModel tree |
-| pending external route | root UIModel |
-| fetched content needed after view recreation | feature UIModel |
-| text-field focus, draft interaction, animation phase | stateful host view |
-| value rendering and action closures | state view |
+| retained Sessions and global selection | AppUIContext |
+| authentication attempts, background work, shutdown | Session / SessionServices |
+| authentication UI, pending route, tabs, paths, presentation | SessionUIContext and children |
+| committed sample message, bookmark, preference state | feature UIContext |
+| form draft, focus, mock account picker, lab inspector page | View-local state |
 
-Conceptually:
+The app owns one registry outside `WindowGroup`. The current target is single-scene; it does not demonstrate independent multiwindow selection. View disappearance does not dispose a Session.
 
-```text
-External State
-`-- Stateful View
-    `-- State View
-```
+## Storage and restoration boundaries
 
-This keeps the externally controllable shape explicit without turning transient SwiftUI mechanics into global state.
+| Scope | Actual data in this demo | Lifetime / retention |
+|---|---|---|
+| app | registry, selection, mock callback broker, last 100 lifecycle events / 10 disposal records | process memory only; diagnostics hold values, not Session references |
+| environment | Production / Staging destination enum | immutable per Session; no shared mutable environment store |
+| Session | counter and namespace `Environments/<environment>/Sessions/<UUID>` | constructed before login; writes rejected on retirement, closed after drain |
+| authenticated child | mock account and new service UUID | created after successful attempt, released after shutdown |
+| feature / operation | tab paths, committed sample state, pending callbacks | owning UIContext or service task |
+| account / credentials | no persistent account database, token, cookie, or Keychain entry | not implemented; no deletion or revocation performed |
 
-## Running the prototype
-
-Open `ModelArchitecture.xcodeproj` in Xcode and run the `ModelArchitecture` scheme on an iOS Simulator.
-
-The normal path through the demo is:
-
-1. Tap **Sign In**.
-2. Complete the two setup steps with **Continue** and **Finish Setup**.
-3. Leave the preparation gate with **Enter App**.
-4. Explore the retained **Home**, **Activity**, **Messages**, and **Account** tabs.
-
-The floating **Route Lab** button exposes the same routing entry point used by deep links. It can open destinations, show app-level presentations, enter restricted mode, and display a blocking notice. The lab also makes the current UIModel tree and any pending intent observable while experimenting.
+The namespace is diagnostic: **no directory is created**. Disposal closes an in-memory store; it does not claim physical deletion. Restart creates a fresh Production Session with empty state; no Session catalog or credential restoration exists. Forced process termination cannot guarantee async draining. Persistent-data recovery and destructive cleanup policies remain outside this mock.
 
 ## Deep links
 
-The app registers the `uimodel-demo` URL scheme. These examples can be opened from Terminal while the app is installed in the booted simulator:
+The app registers `uicontext-demo`; `uimodel-demo` remains a compatibility alias.
 
 ```bash
-xcrun simctl openurl booted 'uimodel-demo://home'
-xcrun simctl openurl booted 'uimodel-demo://home/story/story-1'
-xcrun simctl openurl booted 'uimodel-demo://activity/mentions'
-xcrun simctl openurl booted 'uimodel-demo://messages/conversation/conversation-1'
-xcrun simctl openurl booted 'uimodel-demo://account/preferences'
-xcrun simctl openurl booted 'uimodel-demo://announcement/welcome'
+xcrun simctl openurl booted 'uicontext-demo://home/story/story-1'
+xcrun simctl openurl booted 'uicontext-demo://activity/mentions'
+xcrun simctl openurl booted 'uicontext-demo://messages/conversation/conversation-1'
+xcrun simctl openurl booted 'uicontext-demo://account/preferences'
+xcrun simctl openurl booted 'uicontext-demo://announcement/welcome'
 ```
 
-Try opening a destination URL before signing in. The app should retain it as a pending intent and apply it only after the setup and preparation gates have completed.
+Without a target, the selected Session is captured **when the URL arrives**, not when it becomes ready. Append `?session=<full-Session-UUID>` to address another retained container without changing selection. Invalid, duplicate, unknown, or closing Session targets are rejected, never rerouted to the selected one. Route Lab operates only on its own Session.
 
-## Building from the command line
+Routes requiring tabs wait through authentication, setup, preparation, or restriction. The queue holds the **latest intent only**; a newer deferred intent replaces the previous one. It has no wall-clock expiry, but expires on Session disposal. Logout never transfers it to the replacement, even for the same account.
+
+## Verification
+
+Pure model tests compile the same sources as the app using Swift Package Manager (macOS 14+, Swift 6+), without a simulator, network, sleeps, or extra dependencies:
+
+```bash
+swift test
+```
+
+Tests cover pre-login creation, same-Session authentication, retries, multiple retained containers, selection/navigation retention, disposal before/during login, ordered draining and late-result rejection, whole-Session replacement, duplicate shutdown, selection during shutdown, same-account relogin, targeted/deferred routes, and Session release / fresh-launch state.
+
+Build the iOS views separately:
 
 ```bash
 xcodebuild \
@@ -187,36 +172,50 @@ xcodebuild \
   build
 ```
 
-## Maestro flows
+### XCUITest — code-managed UI regressions
 
-The UI flows cover the ordinary sign-in-to-tabs journey and routing from the Route Lab. With the app installed on a simulator:
+The shared `ModelArchitecture` scheme includes the `ModelArchitectureUITests` target. Open the project and use **Product → Test**, or choose an installed Simulator from `xcrun simctl list devices available` and run:
 
 ```bash
-maestro test Maestro/flows/
+xcodebuild \
+  -project ModelArchitecture.xcodeproj \
+  -scheme ModelArchitecture \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
+  -parallel-testing-enabled NO \
+  -resultBundlePath .tmp/SessionUITests.xcresult \
+  CODE_SIGNING_ALLOWED=NO \
+  test
 ```
 
-The flows use visible labels for user journeys and the `route-lab-button` accessibility identifier for the developer entry point.
+Use a new result-bundle path for each run; Xcode does not overwrite an existing `.xcresult`. The bundle contains assertions, activities, and failure screenshots/accessibility hierarchies.
 
-## Design boundaries
+For local iteration, add `-collect-test-diagnostics never` to skip slow Simulator sysdiagnose collection after failures; test assertions and attachments are still recorded.
 
-The current Swift demo is intentionally a routing prototype, not a complete implementation of the Session lifecycle contract.
+[`SessionUITests`](ModelArchitectureUITests/SessionUITests.swift) drives the real app through XCUITest, with no test-only lifecycle hooks. Each case launches a fresh process and verifies the initial unauthenticated Production container. UUIDs are read from the UI and compared, never hard-coded. State waits and bounded scrolling replace fixed sleeps. The cases cover:
 
-- Domain entities and persistence are sample-only.
-- `UIIntent` is an input vocabulary, not a second state store.
-- A path is appropriate for an ordered stack, but it is not expected to encode the entire app.
-- App-wide sheets and blocking UI are modeled separately from per-tab stacks.
-- The example favors explicit transitions and inspectable state over framework abstraction.
+- authentication success/failure with unchanged ownership, account-derived profile drafts, and fresh logout replacement;
+- simultaneously authenticated containers with independent values, retained navigation/preferences, and selection;
+- shutdown waiting for manually delivered callbacks, rejection of late writes/authentication, and selection during replacement;
+- pre-login disposal and recreation, Session-bound deferred deep links, tabs, Route Lab, restriction restoration, and the legacy URL alias.
+
+These replace the previous Maestro flows. Pure model tests remain separate (`swift test`); the UI test target is not part of the Swift package.
+
+### Devin — separately defined screen-interaction cases
+
+[`Tests/DevinE2E.md`](Tests/DevinE2E.md) defines eight repeatable cases for Devin: starting conditions, actions, expected UI evidence, ownership comparisons, and a result template. Ask Devin to run specified case IDs against a revision and record the interaction. This is a reusable test specification, **not** an executable script or a permanent pass/fail report.
+
+XCUITest results, Devin-operated results, and recordings are distinct artifacts. Neither compilation nor model tests alone proves rendered UI behavior; a recording proves one run, not automatic future execution. Real authentication, durable persistence, and multiwindow behavior remain outside this mock's verified contract.
 
 ## Agent Skill
 
 The repository includes the [SwiftUI Contextual Architecture plugin](plugins/swiftui-contextual-architecture/README.md), a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package rooted at `plugins/swiftui-contextual-architecture/`.
 
-Its English-language [`swift-app-session-foundation`](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds environment-bound Session containers that begin before login, UIContext/UIIntent routing, session-owned services, isolated storage, and explicit disposal/replacement lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific terminology and limitations recorded separately from the skill's contract in its references.
+Its English-language [`swift-app-session-foundation`](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds environment-bound Session containers that begin before login, UIContext/UIIntent routing, session-owned services, isolated storage, and explicit disposal/replacement lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific terminology and limitations recorded separately in its references.
 
-Invoke `$swift-app-session-foundation` when building or refactoring these boundaries in a client that supports this invocation. The repository-local `.agents/skills/swift-app-session-foundation` link points to the packaged skill, keeping one maintained copy. See the plugin README for validation and distribution instructions.
+Invoke `$swift-app-session-foundation` in clients that support this invocation. The repository-local `.agents/skills/swift-app-session-foundation` link points to the packaged skill, keeping one maintained copy. See the plugin README for validation and distribution instructions.
 
 ## Requirements
 
-- Xcode with Swift Observation support
-- iOS 17 or later
-- Maestro only when running the optional UI flows
+- Xcode with Swift Observation support; iOS 17 or later
+- macOS 14+ and Swift 6+ for `swift test`
+- XCUITest uses the existing Xcode installation; no third-party UI testing framework is required
