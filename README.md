@@ -1,14 +1,33 @@
 # SwiftUI Contextual Architecture
 
-This repository is a small SwiftUI prototype for representing app-level routing as an explicit **UIModel tree**.
+This repository contains a small SwiftUI routing prototype and an agent skill for the broader Session lifecycle contract below. The current demo represents app-level routing as an explicit **UIModel tree**.
 
 The demo uses a fictional community app with authentication, initial setup, four retained tabs, deep links, app-wide presentations, and restricted states. Names and sample content are deliberately generic so the architecture can be discussed publicly without depending on a real product.
+
+## Session lifecycle contract
+
+The architecture's **Session** is a container created for a specified environment **before login**, not the period after authentication. Its environment and identity are fixed at creation. Login and other session-scoped operations run inside it; authentication success changes its child scope, not the enclosing Session's identity.
+
+```text
+App root / Session registry
+|-- Session A (environment E, created before login)
+|   |-- session-scoped services, storage, and UIContext
+|   `-- authentication: unauthenticated -> authenticated child
+|-- Session B (another independent container, possibly unauthenticated)
+`-- selected SessionID?
+```
+
+A Session can be explicitly terminated from any phase. Default logout disposes the entire Session and creates a fresh unauthenticated Session for the same environment with a new identity, instead of resetting and reusing the old container. Disposal must stop/drain owned work and reject obsolete results; replacement alone does not prevent old callbacks or writes from racing with new work. Disposal and physical deletion of persistent data are separate policies.
+
+Retaining a Session, selecting it, and authenticating it are separate concepts. Multiple Sessions can use the same environment with isolated session-scoped resources. Changing a Session's environment means creating or selecting a different container, not mutating the existing one.
+
+**Current demo limitation:** the Swift demo below still uses `AppUIModel.Session` as an authentication-state enum under one root. It does not yet implement independent environment-bound Session containers, whole-Session logout replacement, or multiple retained Sessions. Its existing `UIModel` names and routing behavior are unchanged. The [agent skill](#agent-skill) documents the lifecycle contract for future implementations.
 
 ## The idea
 
 Navigation is larger than a single `NavigationPath`. A production-shaped app may have all of these at once:
 
-- a session boundary such as signed out or signed in;
+- an authentication-state boundary such as signed out or signed in;
 - a setup or preparation gate before the main UI is ready;
 - several tab roots that remain alive while another tab is visible;
 - an independent navigation stack in each tab;
@@ -112,7 +131,7 @@ Use a UIModel when state must outlive a particular view instance, participate in
 
 | State | Owner |
 |---|---|
-| session, selected tab, paths, presentations | UIModel tree |
+| authentication state (`session` in the current demo), selected tab, paths, presentations | UIModel tree |
 | pending external route | root UIModel |
 | fetched content needed after view recreation | feature UIModel |
 | text-field focus, draft interaction, animation phase | stateful host view |
@@ -170,7 +189,7 @@ xcodebuild \
 
 ## Maestro flows
 
-The UI flows cover the ordinary session-to-tabs journey and routing from the Route Lab. With the app installed on a simulator:
+The UI flows cover the ordinary sign-in-to-tabs journey and routing from the Route Lab. With the app installed on a simulator:
 
 ```bash
 maestro test Maestro/flows/
@@ -180,7 +199,7 @@ The flows use visible labels for user journeys and the `route-lab-button` access
 
 ## Design boundaries
 
-This project is intentionally a routing prototype, not a complete application architecture.
+The current Swift demo is intentionally a routing prototype, not a complete implementation of the Session lifecycle contract.
 
 - Domain entities and persistence are sample-only.
 - `UIIntent` is an input vocabulary, not a second state store.
@@ -192,7 +211,7 @@ This project is intentionally a routing prototype, not a complete application ar
 
 The repository includes the [SwiftUI Contextual Architecture plugin](plugins/swiftui-contextual-architecture/README.md), a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification) package rooted at `plugins/swiftui-contextual-architecture/`.
 
-Its English-language [`swift-app-session-foundation`](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds login/logout foundations around UIContext/UIIntent, session-owned services, isolated storage, and explicit cleanup lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific limitations recorded in its references.
+Its English-language [`swift-app-session-foundation`](plugins/swiftui-contextual-architecture/skills/swift-app-session-foundation/SKILL.md) skill builds environment-bound Session containers that begin before login, UIContext/UIIntent routing, session-owned services, isolated storage, and explicit disposal/replacement lifecycles. It draws on Pairs, PairsNext, and MoriDesktop, with source-specific terminology and limitations recorded separately from the skill's contract in its references.
 
 Invoke `$swift-app-session-foundation` when building or refactoring these boundaries in a client that supports this invocation. The repository-local `.agents/skills/swift-app-session-foundation` link points to the packaged skill, keeping one maintained copy. See the plugin README for validation and distribution instructions.
 

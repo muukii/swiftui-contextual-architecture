@@ -4,6 +4,12 @@ This records a review of local source files and test definitions on 2026-11-08. 
 
 The original code is not bundled. Paths in each section are relative to the corresponding repository. Access to those repositories is not required to use this skill; consult them only when you need to examine the implementation evidence in detail.
 
+## Terminology of the skill versus the source apps
+
+In this skill, **Session** means a container created for a specified environment before login. Authentication occurs inside it without changing its identity. It can be disposed from any phase; default logout replaces the entire container with a fresh unauthenticated Session in the same environment. An authenticated child scope is not the Session itself.
+
+The observations below preserve the original applications' terminology, including "login session," `SessionID`, and `AppSessionID`. Those names alone do not establish this contract. Pairs records an identifier preserved across login; PairsNext records a UIContext spanning authentication and a registry keyed by environment and SessionID. MoriDesktop contributes retention/selection and shutdown patterns, but its login-catalog semantics do not define when this skill's outer Session begins. These are design inputs, not a claim that all three apps implement an identical pre-login Session container or logout policy.
+
 ## Pairs — Service graphs across authentication and fixed storage destinations
 
 - Repository: `eure/pairs-ios`
@@ -95,4 +101,4 @@ Behavioral examples are in `apps/desktop/Tests/MoriDesktopTests/`: `App/LoginSes
 
 ## Requirements added by this skill
 
-Making every commit boundary for obsolete generations, failure phase, storage policy, and fixed cleanup target explicit is implementation guidance derived from these examples. It does not claim that all three apps implement and verify the same mechanisms. A particular SDK, purging all data, multiple sessions, and a journal remain conditional design choices.
+The pre-login, environment-bound Session contract and default whole-Session replacement on logout are the skill's design contract, not a uniform observation of the source apps. Making every commit boundary for obsolete generations, failure phase, storage policy, and fixed cleanup target explicit is implementation guidance derived from these examples. It does not claim that all three apps implement and verify the same mechanisms. A particular SDK, purging all data, retaining multiple Sessions, and a journal remain conditional design choices.
